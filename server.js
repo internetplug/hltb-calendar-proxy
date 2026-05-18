@@ -170,9 +170,44 @@ app.get("/game/:gameId", async (req, res) => {
   try {
     const { gameId } = req.params;
 
-    const response = await fetch(
-      `${HLTB_GAME_URL}?game_id=${gameId}`,
+    const headers = {
+      "Accept-Encoding": "gzip, deflate, br, zstd",
+      "Accept-Language": "en-US,en;q=0.9",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      Accept: "*/*",
+      Origin: "https://howlongtobeat.com",
+      Referer: "https://howlongtobeat.com/",
+    };
+
+    // Establish session
+    await FETCH_WITH_COOKIES("https://howlongtobeat.com/", {
+      headers,
+    });
+
+    // Fetch auth tokens
+    const initResponse = await FETCH_WITH_COOKIES(
+      `https://howlongtobeat.com/api/bleed/init?t=${Date.now()}`,
       {
+        headers,
+      }
+    );
+
+    if (!initResponse.ok) {
+      return res.status(500).json({
+        error: "Failed to initialize token",
+      });
+    }
+
+    const tokenData = await initResponse.json();
+
+    console.log("TOKEN DATA", tokenData);
+
+    // Perform search immediately using SAME cookies/session
+    const response = await FETCH_WITH_COOKIES(
+      `https://howlongtobeat.com/_next/data/5d2f7SZ64be-rX40rbL3b/game/${gameId}.json?gameId=${gameId}`,
+      {
+        method: "POST",
         headers: {
           "Accept-Encoding": "gzip, deflate, br, zstd",
           "Accept-Language": "en-US,en;q=0.9",
@@ -188,15 +223,9 @@ app.get("/game/:gameId", async (req, res) => {
           "x-auth-token": tokenData.token,
           "x-hp-key": tokenData.hpKey,
           "x-hp-val": tokenData.hpVal,
-        },
+        }
       }
     );
-
-    if (!response.ok) {
-      return res.status(response.status).json({
-        error: "HLTB game lookup failed",
-      });
-    }
 
     const data = await response.json();
 
