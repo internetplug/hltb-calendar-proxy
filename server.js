@@ -18,6 +18,36 @@ const HLTB_SEARCH_URL =
 const HLTB_GAME_URL =
   "https://howlongtobeat.com/api/game";
 
+const MIN_DELAY_MS   = 50;
+const MAX_JITTER_MS  = 100;
+const MAX_QUEUE_SIZE = 20;
+
+class HltbQueue {
+  #tail = Promise.resolve();
+  #pending = 0;
+
+  enqueue(fn) {
+    if (this.#pending >= MAX_QUEUE_SIZE) {
+      return Promise.reject(
+        Object.assign(new Error("HLTB queue full"), { code: "QUEUE_FULL" })
+      );
+    }
+    this.#pending++;
+    const result = this.#tail.then(() => fn());
+    this.#tail = result
+      .catch(() => {})
+      .then(() => new Promise(r => setTimeout(r, MIN_DELAY_MS + Math.floor(Math.random() * (MAX_JITTER_MS + 1)))))
+      .finally(() => { this.#pending--; });
+    return result;
+  }
+}
+
+const hltbQueue = new HltbQueue();
+
+function queuedFetch(url, options) {
+  return hltbQueue.enqueue(() => FETCH_WITH_COOKIES(url, options));
+}
+
 // Middleware
 app.use(express.json());
 
@@ -56,12 +86,12 @@ app.get("/search", async (req, res) => {
     };
 
     // Establish session
-    await FETCH_WITH_COOKIES("https://howlongtobeat.com/", {
+    await queuedFetch("https://howlongtobeat.com/", {
       headers,
     });
 
     // Fetch auth tokens
-    const initResponse = await FETCH_WITH_COOKIES(
+    const initResponse = await queuedFetch(
       `https://howlongtobeat.com/api/bleed/init?t=${Date.now()}`,
       {
         headers,
@@ -79,7 +109,7 @@ app.get("/search", async (req, res) => {
     console.log("TOKEN DATA", tokenData);
 
     // Perform search immediately using SAME cookies/session
-    const response = await FETCH_WITH_COOKIES(
+    const response = await queuedFetch(
       "https://howlongtobeat.com/api/bleed",
       {
         method: "POST",
@@ -155,6 +185,9 @@ app.get("/search", async (req, res) => {
 
     res.json(data);
   } catch (err) {
+    if (err.code === "QUEUE_FULL") {
+      return res.status(503).json({ error: "Server busy, try again shortly." });
+    }
     console.error(err);
 
     res.status(500).json({
@@ -181,12 +214,12 @@ app.get("/game/:gameId", async (req, res) => {
     };
 
     // Establish session
-    await FETCH_WITH_COOKIES("https://howlongtobeat.com/", {
+    await queuedFetch("https://howlongtobeat.com/", {
       headers,
     });
 
     // Fetch auth tokens
-    const initResponse = await FETCH_WITH_COOKIES(
+    const initResponse = await queuedFetch(
       `https://howlongtobeat.com/api/bleed/init?t=${Date.now()}`,
       {
         headers,
@@ -204,7 +237,7 @@ app.get("/game/:gameId", async (req, res) => {
     console.log("TOKEN DATA", tokenData);
 
     // Perform search immediately using SAME cookies/session
-    const response = await FETCH_WITH_COOKIES(
+    const response = await queuedFetch(
       `https://howlongtobeat.com/_next/data/5d2f7SZ64be-rX40rbL3b/game/${gameId}.json?gameId=${gameId}`,
       {
         method: "POST",
@@ -231,6 +264,9 @@ app.get("/game/:gameId", async (req, res) => {
 
     res.json(data);
   } catch (err) {
+    if (err.code === "QUEUE_FULL") {
+      return res.status(503).json({ error: "Server busy, try again shortly." });
+    }
     console.error(err);
 
     res.status(500).json({
@@ -256,12 +292,12 @@ app.get("/api/find/init", async (req, res) => {
     };
 
     // First request establishes cookies/session
-    await FETCH_WITH_COOKIES("https://howlongtobeat.com/", {
+    await queuedFetch("https://howlongtobeat.com/", {
     headers,
     });
 
     // Then fetch token
-    const response = await FETCH_WITH_COOKIES(
+    const response = await queuedFetch(
       `https://howlongtobeat.com/api/bleed/init?t=${Date.now()}`,
       {
         headers,
@@ -272,6 +308,9 @@ app.get("/api/find/init", async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (err) {
+    if (err.code === "QUEUE_FULL") {
+      return res.status(503).json({ error: "Server busy, try again shortly." });
+    }
     console.error(err);
     res.status(500).json({
       error: "Proxy token fetch failed",
