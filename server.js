@@ -276,7 +276,7 @@ app.get("/game/:gameId", async (req, res) => {
 });
 
 /**
- * INIT /api/bleed/init
+ * INIT /api/bleed/init?t=timestamp
  */
 app.get("/api/find/init", async (req, res) => {
   try {
